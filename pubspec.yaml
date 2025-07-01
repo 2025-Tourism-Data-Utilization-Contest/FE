@@ -1,0 +1,37 @@
+name: showings
+description: "A new Flutter project."
+
+# Prevent accidental publishing to pub.dev
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.6.0
+
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  google_maps_flutter: ^2.12.2
+  sliding_up_panel: ^2.0.0+1
+  cached_network_image: ^3.4.1
+  flutter_localizations:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/example.png
+    - assets/images/example2.jpg
+    - assets/images/spring_d.png
+    - assets/images/spring_marker.png
