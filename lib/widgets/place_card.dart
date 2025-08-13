@@ -7,7 +7,8 @@ class PlaceCard extends StatelessWidget {
   final String description;
   final VoidCallback? onMorePressed;
   final void Function(String)? onTagPressed; // 각 태그 클릭용 콜백
-  final String? selectedTag;
+  final bool showImage;
+
 
   const PlaceCard({
     super.key,
@@ -17,13 +18,13 @@ class PlaceCard extends StatelessWidget {
     required this.description,
     this.onMorePressed,
     this.onTagPressed,
-    this.selectedTag,
+    required this.showImage,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(12),
+      margin: EdgeInsets.zero,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: Colors.white,
@@ -32,17 +33,18 @@ class PlaceCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 이미지
-          ClipRRect(
-            child: Image.network(
-              imageUrl,
-              width: double.infinity,
-              height: 200,
-              fit: BoxFit.cover,
-              gaplessPlayback: true,
-              errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.broken_image, size: 180),
+          if(showImage)
+            ClipRRect(
+              child: Image.network(
+                imageUrl,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.broken_image, size: 180),
+              ),
             ),
-          ),
 
           const SizedBox(height: 16),
 
@@ -53,7 +55,6 @@ class PlaceCard extends StatelessWidget {
               spacing: 8,
               runSpacing: 8,
               children: tags.map((tag) {
-                final isSelected = tag == selectedTag;
                 return GestureDetector(
                   onTap: () {
                     if (onTagPressed != null) {
@@ -63,7 +64,7 @@ class PlaceCard extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                     decoration: BoxDecoration(
-                      color: isSelected ? Colors.black : Colors.grey[300],
+                      color: Colors.black,
                       borderRadius: BorderRadius.circular(8), // 더 각지게
                     ),
                     child: Row(
@@ -73,7 +74,7 @@ class PlaceCard extends StatelessWidget {
                           tag,
                           style: TextStyle(
                             fontSize: 14,
-                            color: isSelected ? Colors.white : Colors.black,
+                            color: Colors.white,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -81,7 +82,7 @@ class PlaceCard extends StatelessWidget {
                         Icon(
                           Icons.chevron_right,
                           size: 18,
-                          color: isSelected ? Colors.white : Colors.black,
+                          color: Colors.white,
                         ),
                       ],
                     ),
@@ -109,13 +110,13 @@ class PlaceCard extends StatelessWidget {
                   description,
                   style: const TextStyle(fontSize: 13, color: Colors.black87),
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: onMorePressed,
-                    child: const Text("더보기"),
-                  ),
-                ),
+                // Align(
+                //   alignment: Alignment.centerRight,
+                //   child: TextButton(
+                //     onPressed: onMorePressed,
+                //     child: const Text("더보기"),
+                //   ),
+                // ),
               ],
             ),
           ),

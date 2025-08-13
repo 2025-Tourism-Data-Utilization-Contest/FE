@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:sliding_up_panel/sliding_up_panel.dart';
+
 import 'package:showings/widgets/season_button.dart';
-import 'package:showings/settings/season_markers.dart';
 import 'package:showings/widgets/place_panel.dart';
 import 'package:showings/screens/travel_course_page.dart';
-import 'package:showings/settings/thema.dart';
+import 'package:showings/settings/thema.dart'; // dayMapStyle / nightMapStyle (JSON 문자열)
+import '../settings/theme_service.dart';      // ThemeService, ThemeDetail, ThemeDetailApi
 
 class CourseTab extends StatefulWidget {
   const CourseTab({super.key});
@@ -13,81 +16,235 @@ class CourseTab extends StatefulWidget {
   State<CourseTab> createState() => _CourseTabState();
 }
 
-class _CourseTabState extends State<CourseTab> {
-  late GoogleMapController mapController;
-  LatLng _center = const LatLng(36.5, 127.8);
-  // 현재 활성화된 마커 집합
+class _CourseTabState extends State<CourseTab> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  GoogleMapController? mapController;
+  final PanelController _panelController = PanelController();
+
+  // 맵/마커
+  final LatLng _center = const LatLng(36.5, 127.8);
   Set<Marker> activeMarkers = {};
-  late Marker selectedMarker;
+  Marker? selectedMarker;
 
+  // 패널/상세
   bool isPanelOpen = false;
+  bool _panelMostlyOpen = false;          // 패널 열림여부(임계치 기반)
+  ThemeDetail? _detail;
+  bool _loadingDetail = false;
+  int _detailReqSeq = 0;
 
+  // 필터 상태
   bool isDay = true;
   bool isSpring = false;
   bool isSummer = false;
   bool isFall = false;
   bool isWinter = false;
 
-  String? selectedTag;
+  // 맵 제스처
+  bool _mapGesturesEnabled = true;
+
+  // 요청 최적화
+  Timer? _reloadDebounce;
+  String _lastQueryKey = '';
+
+  // 마커 아이콘 캐시
+  late final Map<double, BitmapDescriptor> _markerIconCache = {
+    BitmapDescriptor.hueRose:   BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+    BitmapDescriptor.hueGreen:  BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+    BitmapDescriptor.hueYellow: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+    BitmapDescriptor.hueBlue:   BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
+    BitmapDescriptor.hueRed:    BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+  };
+
+  // 패널 열림 중 마커 대량 갱신 지연
+  bool _pendingMarkers = false;
+  Set<Marker>? _nextMarkers;
 
   @override
   void initState() {
     super.initState();
-    _updateActiveMarkers();
+    _reloadFromServer(); // 초기 로드(기본 필터면 빈 결과일 수 있음)
   }
 
-  void _onMapCreated(GoogleMapController controller) {
+  @override
+  void dispose() {
+    _reloadDebounce?.cancel();
+    super.dispose();
+  }
+
+  // ====== UI 핸들러 ======
+  void _onMapCreated(GoogleMapController controller) async {
     mapController = controller;
+    // 초기 스타일 적용
+    try {
+      await controller.setMapStyle(isDay ? dayMapStyle : nightMapStyle);
+    } catch (_) {}
   }
 
-  void _toggleDayNight() {
-    setState(() {
-      isDay = !isDay;
-    });
+  void _onMapTap(LatLng pos) {
+    setState(() => isPanelOpen = false);
+    _panelController.close();
   }
 
-  void _updateActiveMarkers() async{
-    // 시즌별 마커 저장
-    final seasonMarkerMap = {
-      'spring': await SeasonMarkers.loadSpringMarkers(context),
-      'summer': SeasonMarkers.summerMarkers,
-      'fall': SeasonMarkers.fallMarkers,
-      'winter': SeasonMarkers.winterMarkers,
-    };
+  void _toggleDayNight() async {
+    setState(() => isDay = !isDay);
+    // 리빌드 없이 스타일만 교체
+    final c = mapController;
+    if (c != null) {
+      try {
+        await c.setMapStyle(isDay ? dayMapStyle : nightMapStyle);
+      } catch (_) {}
+    }
+    _scheduleReload();
+  }
 
-    // 시즌별 활성 여부 저장
-    final seasonActiveMap = {
-      'spring': isSpring,
-      'summer': isSummer,
-      'fall': isFall,
-      'winter': isWinter,
-    };
+  // 시즌 토글은 모두 디바운스 리로드
+  void _toggleSpring() { setState(() => isSpring = !isSpring); _scheduleReload(); }
+  void _toggleSummer() { setState(() => isSummer = !isSummer); _scheduleReload(); }
+  void _toggleFall()   { setState(() => isFall   = !isFall);   _scheduleReload(); }
+  void _toggleWinter() { setState(() => isWinter = !isWinter); _scheduleReload(); }
 
-    final newMarkers = <Marker>{};
+  // ====== 쿼리 & 리로드 ======
+  List<String> _selectedSeasons() {
+    final s = <String>[];
+    if (isSpring) s.add('SPRING');
+    if (isSummer) s.add('SUMMER');
+    if (isFall)   s.add('AUTUMN');
+    if (isWinter) s.add('WINTER');
+    return s;
+  }
 
-    seasonMarkerMap.forEach((season, markers) {
-      if (seasonActiveMap[season] == true) {
-        for (var m in markers) {
-          newMarkers.add(
-            m.copyWith(
-              onTapParam: () {
-                setState(() {
-                  selectedMarker = m;
-                  isPanelOpen = true;
-                });
-              },
-            ),
-          );
-        }
+  List<String> _selectedDayTimes() => [isDay ? 'DAY' : 'NIGHT'];
+
+  void _scheduleReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 200), _reloadFromServer);
+  }
+
+  Future<void> _reloadFromServer() async {
+    final seasons  = _selectedSeasons();
+    final dayTimes = _selectedDayTimes();
+    final queryKey = '${seasons.join(",")}|${dayTimes.join(",")}';
+
+    // 동일 조건이면 중복 요청 스킵
+    if (queryKey == _lastQueryKey) return;
+    _lastQueryKey = queryKey;
+
+    if (seasons.isEmpty) {
+      if (!mounted) return;
+      setState(() => activeMarkers = {});
+      return;
+    }
+
+    try {
+      final points = await ThemeService.fetchThemes(
+        seasons: seasons,
+        dayTimes: dayTimes,
+      );
+      if (!mounted) return;
+
+      if (points.isEmpty) {
+        setState(() => activeMarkers = {});
+        return;
       }
-    });
 
-    setState(() {
-      activeMarkers = newMarkers;
-    });
+      final markers = points.map((p) {
+        return Marker(
+          markerId: MarkerId(p.id.toString()),
+          position: LatLng(p.x, p.y),
+          icon: _iconForSeasons(p.seasons),
+          infoWindow: InfoWindow(
+            title: 'ID: ${p.id}',
+            snippet: '${p.seasons.join(", ")} / ${p.dayTimes.join(", ")}',
+          ),
+          onTap: () {
+            if (!isPanelOpen) _panelController.open(); // 이미 열려있으면 중복 호출 X
+            _loadDetail(p.id);                          // 상세 API 호출
+            setState(() {
+              isPanelOpen = true;
+              selectedMarker = Marker(
+                markerId: MarkerId(p.id.toString()),
+                position: LatLng(p.x, p.y),
+              );
+            });
+          },
+        );
+      }).toSet();
+
+      _applyMarkers(markers);
+    } catch (e) {
+      // 실패 시 다음 토글 때 재요청되도록 queryKey 리셋
+      _lastQueryKey = '';
+      debugPrint('❌ 로드 실패: $e');
+    }
   }
 
-  // 재사용할 버튼 스타일 함수 (배경색만 다르게 받도록)
+  void _applyMarkers(Set<Marker> next) {
+    // 간단 디프: id 셋이 같으면 교체 스킵
+    final prevIds = activeMarkers.map((m) => m.markerId).toSet();
+    final nextIds = next.map((m) => m.markerId).toSet();
+    if (prevIds.length == nextIds.length && prevIds.containsAll(nextIds)) {
+      return;
+    }
+
+    // 패널이 크게 열려 있으면 마커 반영을 잠시 지연
+    if (_panelMostlyOpen) {
+      _pendingMarkers = true;
+      _nextMarkers = next;
+      return;
+    }
+
+    setState(() => activeMarkers = next);
+  }
+
+  double _getSeasonHue(List<String> seasons) {
+    if (seasons.contains('SPRING')) return BitmapDescriptor.hueRose;
+    if (seasons.contains('SUMMER')) return BitmapDescriptor.hueGreen;
+    if (seasons.contains('AUTUMN')) return BitmapDescriptor.hueYellow;
+    if (seasons.contains('WINTER')) return BitmapDescriptor.hueBlue;
+    return BitmapDescriptor.hueRed; // 기본값
+  }
+
+  BitmapDescriptor _iconForSeasons(List<String> seasons) {
+    final hue = _getSeasonHue(seasons);
+    return _markerIconCache[hue]!;
+  }
+
+  // ====== 상세 호출 ======
+  Future<void> _loadDetail(int id) async {
+    setState(() {
+      _loadingDetail = true;
+      _detail = null;
+      isPanelOpen = true;
+    });
+
+    final mySeq = ++_detailReqSeq;
+    try {
+      final d = await ThemeDetailApi.fetchThemeDetail(id);
+      if (!mounted || mySeq != _detailReqSeq) return;
+
+      setState(() {
+        _detail = d;
+        _loadingDetail = false;
+      });
+
+      // 필요시 포커싱(성능 이슈 없을 때만)
+      // await mapController?.animateCamera(
+      //   CameraUpdate.newLatLngZoom(LatLng(d.x, d.y), 10),
+      // );
+    } catch (e) {
+      if (!mounted || mySeq != _detailReqSeq) return;
+      setState(() {
+        _loadingDetail = false;
+        _detail = null;
+      });
+      debugPrint('❌ 상세 로드 실패: $e');
+    }
+  }
+
+  // ====== 스타일 ======
   ButtonStyle _buttonStyle(Color bgColor) {
     return ElevatedButton.styleFrom(
       backgroundColor: bgColor,
@@ -98,89 +255,70 @@ class _CourseTabState extends State<CourseTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // keep-alive 유지
+
     return Stack(
       children: [
         GoogleMap(
           onMapCreated: _onMapCreated,
-          initialCameraPosition: CameraPosition(
-            target: _center,
-            zoom: 7.0,
-          ),
+          initialCameraPosition: CameraPosition(target: _center, zoom: 7.0),
           markers: activeMarkers,
-          style: isDay ? dayMapStyle : nightMapStyle,  // 낮밤에 따라 스타일 선택
-          onTap: (LatLng position) {
-            setState(() {
-              isPanelOpen = false;
-            });
-            mapController.animateCamera(
-              CameraUpdate.newLatLng(_center),
+          // 성능 옵션
+          compassEnabled: false,
+          myLocationButtonEnabled: false,
+          mapToolbarEnabled: false,
+          indoorViewEnabled: false,
+          buildingsEnabled: false,
+          trafficEnabled: false,
+          // 제스처 동적 제어
+          scrollGesturesEnabled: _mapGesturesEnabled,
+          zoomGesturesEnabled: _mapGesturesEnabled,
+          rotateGesturesEnabled: _mapGesturesEnabled,
+          tiltGesturesEnabled: _mapGesturesEnabled,
+          onTap: _onMapTap,
+        ),
+
+        // 슬라이딩 패널
+        PlacePanel(
+          isOpen: isPanelOpen,
+          loading: _loadingDetail,
+          detail: _detail,
+          controller: _panelController,
+          onPanelSlide: (pos) {
+            // 패널 열림 비율에 따라 제스처 제어
+            final enabled = pos < 0.30;
+            if (enabled != _mapGesturesEnabled) {
+              setState(() => _mapGesturesEnabled = enabled);
+            }
+            // 패널이 다시 내려오면 지연된 마커 반영
+            final mostlyOpen = pos >= 0.30;
+            if (_panelMostlyOpen != mostlyOpen) {
+              _panelMostlyOpen = mostlyOpen;
+              if (!mostlyOpen && _pendingMarkers && _nextMarkers != null) {
+                setState(() {
+                  activeMarkers = _nextMarkers!;
+                  _pendingMarkers = false;
+                  _nextMarkers = null;
+                });
+              }
+            }
+          },
+          onPlanPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TravelCourseForm(
+                  imageUrl: _detail?.themeImage ?? '',
+                  title: _detail?.title ?? '여행 계획',
+                  tags: _detail?.birds.map((b) => b.name).toList() ?? const [],
+                  description: _detail?.locationIntro ?? '',
+                ),
+              ),
             );
           },
         ),
-        PlacePanel(isPanelOpen: isPanelOpen),
-        if (isPanelOpen)
-          Positioned(
-            bottom: MediaQuery.of(context).padding.bottom + 24,
-            left: 24,
-            right: 24,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // ⬅️ "자세히 보기" 버튼
-                OutlinedButton(
-                  onPressed: () {
-                    // 원하는 액션
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(
-                      color: Color(0xFF6C6C84),
-                      width: 3.0, // ⬅ 테두리 굵기 설정
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(36),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 14),
-                    backgroundColor: const Color(0xFFF5F5F7),
-                  ),
-                  child: const Text(
-                    '자세히 보기',
-                    style: TextStyle(
-                      color: Color(0xFF4D4D4D),
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
 
-                // ➡️ "여행 계획 만들기" 버튼
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => TravelCourseForm(
-                          imageUrl: 'https://img.khan.co.kr/news/2022/12/18/news-p.v1.20221118.b04d6356099a419ba05abbf5fddc7359_Z1.jpg',
-                          title: '흑두루미가 날아드는 순천만 습지',
-                          tags: ['흑두루미', '민댕기물떼새, 검은머리물떼새'],
-                          description: '순천만 습지는 한국 연안습지 중 최초로 람사르 습지로 지정된 곳으로, 다양한 생태계가 살아 숨쉬는 곳입니다.',
-                        ),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2DDD70),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(36),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
-                  ),
-                  child: const Text(
-                    '여행계획 만들기',
-                    style: TextStyle(fontSize: 18, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-          ),
+        // 상단 토글 바
         Positioned(
           top: 48,
           left: 32,
@@ -196,7 +334,7 @@ class _CourseTabState extends State<CourseTab> {
                   size: 18,
                 ),
                 label: Text(
-                  isDay ? '낯' : '밤',
+                  isDay ? '낮' : '밤',
                   style: TextStyle(
                     color: isDay ? Colors.black : Colors.white,
                     fontSize: 14,
@@ -204,50 +342,10 @@ class _CourseTabState extends State<CourseTab> {
                 ),
                 style: _buttonStyle(isDay ? Colors.white : Colors.black),
               ),
-              SeasonToggleButton(
-                isActive: isSpring,
-                label: '봄',
-                activeColor: Colors.pinkAccent,
-                onPressed: () {
-                  setState(() {
-                    isSpring = !isSpring;
-                    _updateActiveMarkers();  // 상태 변경 후 마커 갱신
-                  });
-                },
-              ),
-              SeasonToggleButton(
-                isActive: isSummer,
-                label: '여름',
-                activeColor: Colors.green,
-                onPressed: () {
-                  setState(() {
-                    isSummer = !isSummer;
-                    _updateActiveMarkers();  // 상태 변경 후 마커 갱신
-                  });
-                },
-              ),
-              SeasonToggleButton(
-                isActive: isFall,
-                label: '가을',
-                activeColor: Colors.yellow,
-                onPressed: () {
-                  setState(() {
-                    isFall = !isFall;
-                    _updateActiveMarkers();  // 상태 변경 후 마커 갱신
-                  });
-                },
-              ),
-              SeasonToggleButton(
-                isActive: isWinter,
-                label: '겨울',
-                activeColor: Colors.blue,
-                onPressed: () {
-                  setState(() {
-                    isWinter = !isWinter;
-                    _updateActiveMarkers();  // 상태 변경 후 마커 갱신
-                  });
-                },
-              ),
+              SeasonToggleButton(isActive: isSpring, label: '봄',  activeColor: Colors.pinkAccent, onPressed: _toggleSpring),
+              SeasonToggleButton(isActive: isSummer, label: '여름', activeColor: Colors.green,      onPressed: _toggleSummer),
+              SeasonToggleButton(isActive: isFall,   label: '가을', activeColor: Colors.yellow,     onPressed: _toggleFall),
+              SeasonToggleButton(isActive: isWinter, label: '겨울', activeColor: Colors.blue,       onPressed: _toggleWinter),
             ],
           ),
         ),
@@ -255,4 +353,3 @@ class _CourseTabState extends State<CourseTab> {
     );
   }
 }
-

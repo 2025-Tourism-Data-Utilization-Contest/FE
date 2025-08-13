@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart'; // 👈 이거 추가
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'settings/thema.dart';
 import 'screens/login_page.dart';
+import 'settings/load_csv.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadDistrictMap();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.clear(); // 👈 모든 키-값 제거// 👈 여기에 한 번만 실행
   runApp(const MyApp());
 }
 
@@ -13,11 +19,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      routes: { '/login': (context) => LoginScreen() },
       debugShowCheckedModeBanner: false,
       title: 'showings',
       theme: appTheme,
       home: LoginScreen(),
-      localizationsDelegates: const [ // 👈 이거 추가
+      localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,

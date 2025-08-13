@@ -3,26 +3,6 @@ import 'package:flutter/material.dart';
 const String dayMapStyle = '''
 [
   {
-    "elementType": "geometry",
-    "stylers": [{"color": "#ffffff"}] // 배경 흰색
-  },
-  {
-    "featureType": "water",
-    "stylers": [{"color": "#DFF6E8"}] // 낮-바다부분
-  },
-  {
-    "featureType": "road",
-    "stylers": [{"color": "#E6F4EB"}] // 낮-길
-  },
-  {
-    "featureType": "landscape",
-    "stylers": [{"color": "#C7E5D3"}] // 낮-고지대
-  },
-  {
-    "featureType": "poi",
-    "stylers": [{"visibility": "off"}]
-  },
-  {
     "elementType": "labels.icon",
     "stylers": [{"visibility": "off"}]
   }
@@ -35,31 +15,96 @@ const String nightMapStyle = '''
 [
   {
     "elementType": "geometry",
-    "stylers": [{"color": "#65647B"}] // 밤-바다 부분 배경 통일
-  },
-  {
-    "featureType": "water",
-    "stylers": [{"color": "#65647B"}] // 밤-바다
-  },
-  {
-    "featureType": "landscape",
-    "stylers": [{"color": "#848395"}] // 밤-육지 부분
-  },
-  {
-    "featureType": "road",
-    "stylers": [{"color": "#9392A9"}] // 밤-길
-  },
-  {
-    "featureType": "administrative",
-    "stylers": [{"visibility": "off"}]
+    "stylers": [
+      { "color": "#2e2e3a" }
+    ]
   },
   {
     "elementType": "labels.text.fill",
-    "stylers": [{"color": "#A8A7BB"}] // 밤-고지대
+    "stylers": [
+      { "color": "#B0B0C0" }
+    ]
   },
   {
-    "elementType": "labels.icon",
-    "stylers": [{"visibility": "off"}]
+    "elementType": "labels.text.stroke",
+    "stylers": [
+      { "color": "#1f1f2b" }
+    ]
+  },
+  {
+    "featureType": "administrative",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#4B4B66" }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#4a4a5a" }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      { "color": "#2e2e3a" }
+    ]
+  },
+  {
+    "featureType": "road",
+    "elementType": "labels.text.fill",
+    "stylers": [
+      { "color": "#8a8a9c" }
+    ]
+  },
+  {
+    "featureType": "transit",
+    "stylers": [
+      { "visibility": "off" }
+    ]
+  },
+  {
+    "featureType": "water",
+    "stylers": [
+      { "color": "#65647B" }
+    ]
+  },
+  {
+    "featureType": "poi.park",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#324d3d" }
+    ]
+  },
+  {
+    "featureType": "landscape.natural",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#3b3b50" }
+    ]
+  },
+  {
+    "featureType": "administrative.country",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      { "color": "#5c5c78" }, { "weight": 0.6 }
+    ]
+  },
+  {
+    "featureType": "poi.business",
+    "elementType": "geometry",
+    "stylers": [
+      { "color": "#3e3e4d" }
+    ]
+  },
+  {
+    "featureType": "water",
+    "elementType": "geometry.stroke",
+    "stylers": [
+      { "color": "#4e4e65" }, { "weight": 0.2 }
+    ]
   }
 ]
 ''';

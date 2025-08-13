@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:showings/widgets/place_card.dart';
-import 'package:showings/screens/place_add_page.dart';
+import 'package:showings/screens/course_detail_page.dart';
+import '../screens/detail_page.dart';
+import '../settings/call_api.dart';
+import '../settings/travel_course.dart';
+import '../settings/travel_day.dart';
+import '../settings/user.dart';
 
 class TravelCourseForm extends StatefulWidget {
   final String imageUrl;
   final String title;
   final List<String> tags;
   final String description;
+
 
   const TravelCourseForm({
     super.key,
@@ -22,6 +29,14 @@ class TravelCourseForm extends StatefulWidget {
 
 class _TravelCourseFormState extends State<TravelCourseForm> {
   String? selectedTag;
+  DateTime? startDate;
+  DateTime? endDate;
+  bool isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -45,15 +60,18 @@ class _TravelCourseFormState extends State<TravelCourseForm> {
                 title: widget.title,
                 tags: widget.tags,
                 description: widget.description,
-                selectedTag: selectedTag, // 상태 변수로 선택된 태그 전달
                 onTagPressed: (tag) {
-                  setState(() {
-                    selectedTag = tag; // 태그 선택 상태 갱신
-                  });
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BirdDetailScreen(),
+                    ),
+                  );
                 },
                 onMorePressed: () {
                   // 더보기 버튼 눌렀을 때
                 },
+                showImage: true,
               ),
               const SizedBox(height: 24),
               const Text(
@@ -61,32 +79,24 @@ class _TravelCourseFormState extends State<TravelCourseForm> {
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 12),
-              DateSelector(label: '가는 날'),
-              const SizedBox(height: 12),
-              DateSelector(label: '오는 날'),
-              const SizedBox(height: 24),
-              const Text(
-                '인원 수',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              DateSelector(
+                label: '가는 날',
+                initialDate: startDate,
+                onDateSelected: (date) {
+                  setState(() {
+                    startDate = date;
+                  });
+                },
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: DropdownButtonFormField<int>(
-                  value: 1,
-                  decoration: const InputDecoration(border: InputBorder.none),
-                  items: List.generate(10, (index) {
-                    return DropdownMenuItem(
-                      value: index + 1,
-                      child: Text('${index + 1}명'),
-                    );
-                  }),
-                  onChanged: (value) {},
-                ),
+              DateSelector(
+                label: '오는 날',
+                initialDate: endDate,
+                onDateSelected: (date) {
+                  setState(() {
+                    endDate = date;
+                  });
+                },
               ),
               const SizedBox(height: 80), // 여유 공간
             ],
@@ -103,25 +113,66 @@ class _TravelCourseFormState extends State<TravelCourseForm> {
           top: 8,
         ),
         child: ElevatedButton(
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const AddTravelDestinationScreen(),
-              ),
-            );
+          onPressed: isSubmitting ? null : () async {
+            if (startDate == null || endDate == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('가는 날과 오는 날을 선택해주세요')),
+              );
+              return;
+            }
+
+            try {
+              setState(() => isSubmitting = true);
+
+              final fmt = DateFormat('yyyy-MM-dd');
+              final startStr = fmt.format(startDate!);
+              final endStr   = fmt.format(endDate!);
+
+              final result = await RouteService.createRoute(
+                startDate: startStr,
+                endDate: endStr,
+              );
+
+              final routeId = result['data'] as int; // 서버가 준 id
+
+              final user = await loadUser();
+              final daysCount = endDate!.difference(startDate!).inDays + 1;
+
+              final travelCourse = TravelCourse(
+                startDate: startDate!,
+                endDate: endDate!,
+                title: "",
+                days: List.generate(daysCount, (_) => TravelDay(places: [])),
+                author: user,
+                id : routeId,
+              );
+
+              if (!context.mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TravelCourseDetailScreen(travelCourse: travelCourse),
+                ),
+              );
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('루트 생성 실패: $e')),
+              );
+            } finally {
+              if (mounted) setState(() => isSubmitting = false);
+            }
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF3B3A57),
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(36),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(36)),
           ),
-          child: const Text(
-            '다음으로',
-            style: TextStyle(fontSize: 16, color: Colors.white),
-          ),
+          child: isSubmitting
+              ? const SizedBox(
+            width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2),
+          )
+              : const Text('다음으로', style: TextStyle(fontSize: 16, color: Colors.white)),
         ),
       ),
     );
@@ -130,15 +181,29 @@ class _TravelCourseFormState extends State<TravelCourseForm> {
 
 class DateSelector extends StatefulWidget {
   final String label;
+  final DateTime? initialDate;
+  final ValueChanged<DateTime> onDateSelected;
 
-  const DateSelector({super.key, required this.label});
+  const DateSelector({
+    super.key,
+    required this.label,
+    this.initialDate,
+    required this.onDateSelected,
+  });
 
   @override
   State<DateSelector> createState() => _DateSelectorState();
 }
 
+
 class _DateSelectorState extends State<DateSelector> {
-  DateTime selectedDate = DateTime.now();
+  late DateTime selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedDate = widget.initialDate ?? DateTime.now();
+  }
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -146,15 +211,17 @@ class _DateSelectorState extends State<DateSelector> {
       initialDate: selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      locale: const Locale('ko'), // 한글 지원
+      locale: const Locale('ko'),
     );
 
     if (picked != null && picked != selectedDate) {
       setState(() {
         selectedDate = picked;
       });
+      widget.onDateSelected(picked); // 선택한 날짜 부모로 전달
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -167,20 +234,29 @@ class _DateSelectorState extends State<DateSelector> {
           color: Colors.grey[200],
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Row(
-          children: [
-            const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
-            const SizedBox(width: 12),
-            Text(
-              widget.label,
-              style: const TextStyle(fontSize: 15, color: Colors.black54),
-            ),
-            const Spacer(),
-            Text(
-              '${selectedDate.month}월 ${selectedDate.day}일 (${_weekdayToStr(selectedDate.weekday)})',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
-            ),
-          ],
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12), // ⬅ horizontal 제거
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              const SizedBox(width: 16), // 좌측 여백은 여기서만 한 번 주기
+              const Icon(Icons.calendar_today, size: 20, color: Colors.grey),
+              const SizedBox(width: 12),
+              Text(
+                widget.label,
+                style: const TextStyle(fontSize: 15, color: Colors.black54),
+              ),
+              const Spacer(),
+              Text(
+                '${selectedDate.month}월 ${selectedDate.day}일 (${_weekdayToStr(selectedDate.weekday)})',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(width: 16), // 우측 여백도 맞춰줌
+            ],
+          ),
         ),
       ),
     );

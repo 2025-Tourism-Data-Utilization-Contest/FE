@@ -38,7 +38,7 @@ class SeasonToggleButton extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color:  isActive ? Colors.black : Colors.grey,
+              color:  isActive ? Colors.black : Colors.black87,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),

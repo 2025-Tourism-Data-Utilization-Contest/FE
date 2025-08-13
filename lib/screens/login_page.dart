@@ -1,153 +1,139 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:showings/screens/home_screen.dart';
+import 'package:showings/screens/login_webview_page.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+final _storage = FlutterSecureStorage();
 
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
+void loadTokens() async {
+  final accessToken = await _storage.read(key: 'accessToken');
+  final refreshToken = await _storage.read(key: 'refreshToken');
+
+  print('🔥 accessToken: $accessToken');
+  print('🔥 refreshToken: $refreshToken');
 }
 
-class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _idController = TextEditingController();
-  final TextEditingController _pwController = TextEditingController();
-  bool _showIdError = false;
-  bool _showPwError = false;
-  bool _rememberId = false;
-
-  void _onLoginPressed() {
-    setState(() {
-      _showIdError = _idController.text != 'abcde1234';
-      _showPwError = _pwController.text != 'password123';
-    });
-
-    if (!_showIdError && !_showPwError) {
-      // 로그인 성공 처리
-    }
-  }
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 48),
-              const Text('앱 로고', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              const Text('로그인', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              _buildTextField(
-                controller: _idController,
-                label: '아이디',
-                error: _showIdError,
-                errorText: '아이디 혹은 비밀번호가 맞지 않습니다.',
-              ),
-              const SizedBox(height: 12),
-              _buildTextField(
-                controller: _pwController,
-                label: '비밀번호',
-                obscure: true,
-                error: _showPwError,
-                errorText: '아이디 혹은 비밀번호가 맞지 않습니다.',
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Checkbox(
-                    value: _rememberId,
-                    onChanged: (value) {
-                      setState(() {
-                        _rememberId = value ?? false;
-                      });
-                    },
-                  ),
-                  const Text('아이디 저장'),
-                ],
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('아이디 찾기'),
-                  Text('비밀번호 찾기'),
-                  Text('회원가입'),
-                ],
-              ),
-              const SizedBox(height: 32),
-              ElevatedButton(
-                onPressed: _onLoginPressed,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3B3A57),
-                  minimumSize: const Size.fromHeight(50),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(36),
-                  ),
-                ),
-                child: const Text('확인', style: TextStyle(color: Colors.white)),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {},
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFFEE500),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: const Icon(Icons.chat_bubble_outline, color: Colors.black),
-                  label: const Text('카카오로 시작하기', style: TextStyle(color: Colors.black)),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => HomeScreen(), // 이동할 페이지로 교체
-                    ),
-                  );
-                },
-                child: const Text(
-                  '로그인 없이 계속하기',
-                  style: TextStyle(color: Colors.black54),
-                ),
-              ),
-            ],
+      body: Stack(
+        children: [
+          // 배경 이미지
+          Positioned.fill(
+            child: Image.asset(
+              'assets/images/login_background.png', // 너 이미지 경로에 맞게 수정
+              fit: BoxFit.cover,
+            ),
           ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    bool obscure = false,
-    bool error = false,
-    String? errorText,
-  }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        errorText: error ? errorText : null,
-        suffixIcon: controller.text.isNotEmpty
-            ? IconButton(
-          icon: const Icon(Icons.clear),
-          onPressed: () => setState(() => controller.clear()),
-        )
-            : null,
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Spacer(),
+                  const SizedBox(height: 16),
+                  const Spacer(),
+
+                  const Text(
+                    '간편 로그인으로 시작하세요',
+                    style: TextStyle(fontSize: 14, color: Colors.white),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 네이버 로그인
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const WebViewPage(
+                            url: 'https://api.saeroksaerok.site/oauth2/authorization/naver',
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF03C75A),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Center(
+                        child: Image.asset(
+                          'assets/images/naver_login.png',
+                          height: 60, // 로고 크기 (텍스트 안 뭉개질 정도로)
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 카카오 로그인
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const WebViewPage(
+                            url: 'https://api.saeroksaerok.site/oauth2/authorization/kakao',
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE500),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16), // 이미지 좌우 여백
+                      child: Center(
+                        child: Image.asset(
+                          'assets/images/kakao_login.png',
+                          height: 60, // 로고 크기 (텍스트 안 뭉개질 정도로)
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 로그인 없이 계속하기
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      );
+                    },
+                    child: const Text(
+                      '로그인 없이 계속하기',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-      onChanged: (_) => setState(() {}),
     );
   }
 }
+
+Future<void> clearAllPreferences() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.clear(); // 모든 데이터 삭제
+}
+

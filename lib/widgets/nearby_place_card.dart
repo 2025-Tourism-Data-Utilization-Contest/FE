@@ -4,15 +4,25 @@ class NearbyPlaceCard extends StatelessWidget {
   final String imagePath;
   final String title;
   final String subtitle;
-  final String price; // 💰 추가
+  final String? distanceString;
 
   const NearbyPlaceCard({
     super.key,
     required this.imagePath,
     required this.title,
     required this.subtitle,
-    required this.price, // 💰 추가
+    required this.distanceString,
   });
+
+  String get displayDistance {
+    final meters = double.tryParse(distanceString ?? '');
+    if (meters == null) return '-';
+    if (meters >= 1000) {
+      return '${(meters / 1000).toStringAsFixed(1)}km';
+    } else {
+      return '${meters.toStringAsFixed(0)}m';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,29 +33,36 @@ class NearbyPlaceCard extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.asset(
+            child: Image.network(
               imagePath,
-              height: 200,
+              height: 180,
               width: 200,
               fit: BoxFit.cover,
-              gaplessPlayback: true,
+              errorBuilder: (context, error, stackTrace) {
+                return Container(
+                  height: 200,
+                  width: 200,
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.image_not_supported, size: 40),
+                );
+              },
             ),
           ),
           const SizedBox(height: 8),
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           Text(
             subtitle,
             style: Theme.of(context).textTheme.bodyMedium,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
           Text(
-            price, // 💰 가격 표시
+            displayDistance,
             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
               fontWeight: FontWeight.bold,
               color: Colors.black,
@@ -58,4 +75,3 @@ class NearbyPlaceCard extends StatelessWidget {
     );
   }
 }
-
